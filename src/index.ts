@@ -1,4 +1,5 @@
-// PatentsView MCP Server
+// PatentsView MCP Server — USPTO patent search, assignee/inventor lookup, CPC codes
+// Code Mode only: patentsview_search, patentsview_execute, query_data, get_schema
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerQueryData } from "./tools/query-data";
