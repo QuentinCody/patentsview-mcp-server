@@ -9,9 +9,10 @@ interface ToolRegisterable {
 	tool: (...args: unknown[]) => void;
 }
 
+/** Minimal shape required from the worker Env for Code Mode registration. */
 interface CodeModeEnv {
-	PATENTSVIEW_DATA_DO: DurableObjectNamespace;
-	CODE_MODE_LOADER: WorkerLoader;
+	PATENTSVIEW_DATA_DO: Pick<Env["PATENTSVIEW_DATA_DO"], "get" | "idFromName">;
+	CODE_MODE_LOADER: Env["CODE_MODE_LOADER"];
 	PATENTSVIEW_API_KEY?: string;
 }
 
