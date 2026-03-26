@@ -9,7 +9,7 @@ interface QueryDataArgs {
 	limit?: number;
 }
 
-export function registerQueryData(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }) {
+export function registerQueryData(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }): void {
 	const handler = createQueryDataHandler("PATENTSVIEW_DATA_DO", "patentsview");
 
 	server.registerTool(

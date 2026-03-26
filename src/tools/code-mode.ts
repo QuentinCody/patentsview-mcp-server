@@ -19,7 +19,7 @@ interface CodeModeEnv {
 export function registerCodeMode(
 	server: McpServer,
 	env: CodeModeEnv,
-) {
+): void {
 	const apiFetch = createPatentsviewApiFetch({
 		PATENTSVIEW_API_KEY: env.PATENTSVIEW_API_KEY ?? "",
 	});

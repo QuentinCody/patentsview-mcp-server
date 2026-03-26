@@ -7,7 +7,7 @@ interface GetSchemaArgs {
 	data_access_id?: string;
 }
 
-export function registerGetSchema(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }) {
+export function registerGetSchema(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }): void {
 	const handler = createGetSchemaHandler("PATENTSVIEW_DATA_DO", "patentsview");
 
 	server.registerTool(
