@@ -1,5 +1,8 @@
-// PatentsView MCP Server — USPTO patent search, assignee/inventor lookup, CPC codes
-// Code Mode only: patentsview_search, patentsview_execute, query_data, get_schema
+// Patent MCP Server — worldwide patent data via EPO Open Patent Services (OPS) v3.2.
+// Repointed from the dead USPTO PatentsView upstream (api.patentsview.org → 301;
+// search.patentsview.org key grants suspended 2026-03) to EPO OPS (OAuth2, free, live).
+// Code Mode only: patents_search, patents_execute, query_data, get_schema.
+// Requires EPO_OPS_KEY + EPO_OPS_SECRET (register at https://developers.epo.org).
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerQueryData } from "./tools/query-data";

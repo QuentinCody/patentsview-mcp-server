@@ -32,7 +32,7 @@ export function registerGetSchema(server: McpServer, env?: { PATENTSVIEW_DATA_DO
 			return handler(
 				typedArgs,
 				envRecord,
-				(extra as { sessionId?: string })?.sessionId,
+				(extra as Record<string, unknown>),
 			);
 		},
 	);

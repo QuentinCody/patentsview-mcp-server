@@ -52,6 +52,10 @@
 			"binding": "CODE_MODE_LOADER"
 		}
 	],
+	"vars": {
+		"EPO_OPS_KEY": "",
+		"EPO_OPS_SECRET": ""
+	},
 	"observability": {
 		"enabled": true
 	},
