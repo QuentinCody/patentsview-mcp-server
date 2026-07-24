@@ -1,3 +1,4 @@
+import { buildHealthResponse, configureCitationSigning } from "@bio-mcp/shared";
 // Patent MCP Server — worldwide patent data via EPO Open Patent Services (OPS) v3.2.
 // Repointed from the dead USPTO PatentsView upstream (api.patentsview.org → 301;
 // search.patentsview.org key grants suspended 2026-03) to EPO OPS (OAuth2, free, live).
@@ -19,6 +20,8 @@ export class MyMCP extends McpAgent<Env> {
 	});
 
 	async init() {
+
+		configureCitationSigning(this.env);
 		const env = this.env;
 		registerQueryData(this.server, env);
 		registerGetSchema(this.server, env);
@@ -31,10 +34,7 @@ export default {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/health") {
-			return new Response("ok", {
-				status: 200,
-				headers: { "content-type": "text/plain" },
-			});
+			return buildHealthResponse("patentsview");
 		}
 
 		if (url.pathname === "/mcp") {
