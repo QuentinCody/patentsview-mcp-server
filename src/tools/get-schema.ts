@@ -15,7 +15,7 @@ export function registerGetSchema(server: McpServer, env?: { PATENTSVIEW_DATA_DO
 		{
 			title: "Get Staged Data Schema",
 			description:
-				"Get schema information for staged PatentsView data. Shows table structures and row counts. " +
+				"Get schema information for staged EPO patent data (Open Patent Services v3.2 or EPO Linked Open Data). Shows table structures and row counts. " +
 				"If called without a data_access_id, lists all staged datasets available in this session.",
 			inputSchema: {
 				data_access_id: z.string().min(1).optional().describe(

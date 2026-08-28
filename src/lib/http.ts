@@ -11,14 +11,88 @@
  *
  * OAuth pattern mirrors who-icd11-mcp-server/src/lib/http.ts (client_credentials + module-level
  * token cache, refreshed 60 s before expiry, one retry on 401).
+ *
+ * This is the CREDENTIALED tier. The keyless tier lives in lib/lod.ts (EPO Linked Open Data);
+ * lib/api-adapter.ts routes between the two by path prefix.
  */
 
 const TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken";
 const OPS_BASE = "https://ops.epo.org/3.2/rest-services";
 
+/** Self-service, free, no approval committee. */
+export const EPO_OPS_REGISTRATION_URL = "https://developers.epo.org/user/register";
+
 export interface EpoOpsEnv {
 	EPO_OPS_KEY: string;
 	EPO_OPS_SECRET: string;
+}
+
+/**
+ * Raised BEFORE any network call when the OPS Consumer Key/Secret are absent.
+ *
+ * Without this, the only signal was EPO's own `401 Client identifier is required`, which
+ * reads like an upstream outage and names neither the env vars nor how to set them. The
+ * error still propagates as an error — `api.get()` rethrows it inside the isolate and the
+ * tool result stays `isError` — because "no credentials" must never look like a success.
+ */
+export class MissingEpoOpsCredentialsError extends Error {
+	readonly code = "MISSING_CREDENTIALS";
+	readonly status = 401;
+	readonly data: {
+		code: string;
+		missing: string[];
+		env_vars: string[];
+		registration_url: string;
+		setup_commands: string[];
+		keyless_alternative: string;
+	};
+
+	constructor(missing: string[]) {
+		super(
+			`EPO OPS credentials are not configured — ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} unset. ` +
+				"The /published-data, /family, /legal and /classification endpoints of this server all need a free " +
+				`EPO developer app. 1) Register at ${EPO_OPS_REGISTRATION_URL}. 2) Create an app under "My Apps" and ` +
+				"copy its Consumer Key + Consumer Secret. 3) Set them as Worker secrets: " +
+				"`cd servers/patentsview-mcp-server && npx wrangler secret put EPO_OPS_KEY` then " +
+				"`npx wrangler secret put EPO_OPS_SECRET`. " +
+				"KEYLESS ALTERNATIVE: the /lod/* endpoints of this same server answer with NO credential from EPO " +
+				"Linked Open Data. They serve EP bibliographic records, worldwide publication identifiers, the " +
+				"application link and the citation graph — but NOT full text, NOT INPADOC legal status, NOT non-EP " +
+				"titles or abstracts, and NOT CQL search. Run patents_search('lod') for the list.",
+		);
+		this.name = "MissingEpoOpsCredentialsError";
+		this.data = {
+			code: "MISSING_CREDENTIALS",
+			missing,
+			env_vars: ["EPO_OPS_KEY", "EPO_OPS_SECRET"],
+			registration_url: EPO_OPS_REGISTRATION_URL,
+			setup_commands: [
+				"cd servers/patentsview-mcp-server && npx wrangler secret put EPO_OPS_KEY",
+				"cd servers/patentsview-mcp-server && npx wrangler secret put EPO_OPS_SECRET",
+			],
+			keyless_alternative:
+				"Call the /lod/* endpoints of this server (EPO Linked Open Data, no credential).",
+		};
+	}
+}
+
+/** Which of the two OPS secrets are missing or blank. Empty array = both present. */
+export function missingEpoOpsCredentials(env: Partial<EpoOpsEnv> | undefined): string[] {
+	const missing: string[] = [];
+	if (!env?.EPO_OPS_KEY?.trim()) missing.push("EPO_OPS_KEY");
+	if (!env?.EPO_OPS_SECRET?.trim()) missing.push("EPO_OPS_SECRET");
+	return missing;
+}
+
+/** True when both OPS secrets are present, i.e. the OPS tier can be attempted. */
+export function hasEpoOpsCredentials(env: Partial<EpoOpsEnv> | undefined): boolean {
+	return missingEpoOpsCredentials(env).length === 0;
+}
+
+/** Throw the actionable {@link MissingEpoOpsCredentialsError} when either secret is absent. */
+export function assertEpoOpsCredentials(env: Partial<EpoOpsEnv> | undefined): void {
+	const missing = missingEpoOpsCredentials(env);
+	if (missing.length > 0) throw new MissingEpoOpsCredentialsError(missing);
 }
 
 // Module-level token cache
@@ -30,6 +104,9 @@ let tokenExpiresAt = 0;
  * Caches until 60 s before expiry. EPO returns expires_in as a string (e.g. "1199").
  */
 async function getAccessToken(env: EpoOpsEnv): Promise<string> {
+	// Fail on the missing secret itself, not on EPO's downstream 401.
+	assertEpoOpsCredentials(env);
+
 	const now = Date.now();
 	if (cachedToken && now < tokenExpiresAt) {
 		return cachedToken;
@@ -48,12 +125,17 @@ async function getAccessToken(env: EpoOpsEnv): Promise<string> {
 
 	if (!response.ok) {
 		const errText = await response.text().catch(() => response.statusText);
-		throw new Error(`EPO OPS token fetch failed (${response.status}): ${errText.slice(0, 300)}`);
+		throw new Error(
+			`EPO OPS token fetch failed (${response.status}): ${errText.slice(0, 300)}`,
+		);
 	}
 
 	const data = (await response.json()) as { access_token: string; expires_in: string | number };
 	cachedToken = data.access_token;
-	const ttl = typeof data.expires_in === "string" ? Number.parseInt(data.expires_in, 10) : data.expires_in;
+	const ttl =
+		typeof data.expires_in === "string"
+			? Number.parseInt(data.expires_in, 10)
+			: data.expires_in;
 	// Expire 60 seconds early; default to 20 min if EPO omits/garbles expires_in.
 	tokenExpiresAt = now + ((Number.isFinite(ttl) && ttl > 0 ? ttl : 1200) - 60) * 1000;
 

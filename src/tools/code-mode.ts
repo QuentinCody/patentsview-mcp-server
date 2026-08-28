@@ -27,8 +27,8 @@ function epoEnvFrom(env: CodeModeEnv): EpoOpsEnv {
 }
 
 /**
- * Register patents_search + patents_execute (EPO OPS upstream).
- * Prefix is `patents` (the data source moved from USPTO PatentsView to EPO OPS);
+ * Register patents_search + patents_execute (EPO upstream, two tiers).
+ * Prefix is `patents` (the data source moved from USPTO PatentsView to EPO);
  * the DO binding name PATENTSVIEW_DATA_DO is retained to avoid a migration.
  */
 export function registerCodeMode(
@@ -46,7 +46,18 @@ export function registerCodeMode(
 	const executeTool = createExecuteTool({
 		prefix: "patents",
 		// Verifiable provenance: patents_execute results carry a _meta.citation.
-		source: { id: "patents", name: "PatentsView (USPTO)", url: "https://patentsview.org", license: "U.S. Public Domain" },
+		// This descriptor named "PatentsView (USPTO)" / patentsview.org / "U.S. Public Domain"
+		// while every byte came from EPO — a citation that misattributed the source and
+		// asserted a licence that does not apply. Both EPO tiers are named here; the tier
+		// that actually answered a given call is stamped on the payload as `_meta.tier` by
+		// lib/api-adapter.ts (ExecuteToolOptions.source is fixed per tool, not per call).
+		source: {
+			id: "epo-patent-data",
+			name: "EPO Open Patent Services v3.2 (credentialed) + EPO Linked Open Data (keyless)",
+			url: "https://ops.epo.org",
+			license:
+				"OPS: EPO terms of use / fair-use policy (https://www.epo.org/en/service-support/ordering/fair-use.html). Linked Open Data: CC BY 4.0 (https://www.epo.org/en/searching-for-patents/data/linked-open-data).",
+		},
 		catalog: epoOpsCatalog,
 		apiFetch,
 		doNamespace: env.PATENTSVIEW_DATA_DO,

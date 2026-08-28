@@ -15,9 +15,9 @@ export function registerQueryData(server: McpServer, env?: { PATENTSVIEW_DATA_DO
 	server.registerTool(
 		"patentsview_query_data",
 		{
-			title: "Query Staged PatentsView Data",
+			title: "Query Staged EPO Patent Data",
 			description:
-				"Query staged USPTO PatentsView data using SQL. Use this when responses are too large and have been staged with a data_access_id.",
+				"Query staged EPO patent data (Open Patent Services v3.2 or EPO Linked Open Data) using SQL. Use this when a patents_execute response was too large and came back with a data_access_id. NOTE: the tool prefix here is `patentsview` for historical reasons, while Code Mode uses `patents_search` / `patents_execute` — same server.",
 			inputSchema: {
 				data_access_id: z.string().min(1).describe("Data access ID for the staged dataset"),
 				sql: z.string().min(1).describe("SQL query to execute against the staged data"),
