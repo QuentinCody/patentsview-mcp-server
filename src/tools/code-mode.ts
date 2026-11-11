@@ -6,9 +6,6 @@ import { createEpoOpsApiFetch } from "../lib/api-adapter";
 import type { EpoOpsEnv } from "../lib/http";
 
 /** Minimal interface matching McpServer.tool() for shared register() calls */
-interface ToolRegisterable {
-	tool: (...args: unknown[]) => void;
-}
 
 /** Minimal shape required from the worker Env for Code Mode registration. */
 interface CodeModeEnv {
@@ -36,12 +33,18 @@ export function registerCodeMode(
 	env: CodeModeEnv,
 ): void {
 	const apiFetch = createEpoOpsApiFetch(epoEnvFrom(env));
+	const registrar = { tool: (...args: unknown[]) => {
+		const [name, ...rest] = args;
+		// SAFETY: shared factories supply SDK arguments; only the alias changes.
+		const register = server.tool.bind(server) as (...values: unknown[]) => void;
+		register(name, ...rest); register(`mcp_${String(name)}`, ...rest);
+	} };
 
 	const searchTool = createSearchTool({
 		prefix: "patents",
 		catalog: epoOpsCatalog,
 	});
-	searchTool.register(server as unknown as ToolRegisterable);
+	searchTool.register(registrar);
 
 	const executeTool = createExecuteTool({
 		prefix: "patents",
@@ -60,8 +63,11 @@ export function registerCodeMode(
 		},
 		catalog: epoOpsCatalog,
 		apiFetch,
+		maxInlineBytes: 30 * 1024,
+		stagingThreshold: 30 * 1024,
+		timeout: 60000,
 		doNamespace: env.PATENTSVIEW_DATA_DO,
 		loader: env.CODE_MODE_LOADER,
 	});
-	executeTool.register(server as unknown as ToolRegisterable);
+	executeTool.register(registrar);
 }

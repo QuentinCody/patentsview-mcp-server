@@ -4,10 +4,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for wor
 data. It is one of 100+ servers in the [Bio MCP](../../README.md) monorepo.
 
 > **The name is historical.** The fleet alias is `patentsview` and the worker is
-> `patentsview-mcp-server`, but the upstream is **not** USPTO PatentsView. PatentsView is
-> dead — `api.patentsview.org` 301-redirects to `data.uspto.gov`, `search.patentsview.org`
-> is NXDOMAIN, and the successor `api.uspto.gov` is key-gated. This server talks to the
-> **EPO** instead. See [Naming](#naming) below.
+> `patentsview-mcp-server`, but the upstream is **EPO**. The retained name does not imply
+> USPTO coverage or connectivity. See [Naming](#naming) below.
 
 ## Two tiers
 
@@ -26,13 +24,13 @@ upstream URL, the licence, and — for LOD — the exact SPARQL that produced th
 
 ### What the keyless tier serves
 
-Measured against the live endpoint, with no credential:
+Existing catalog coverage (the new workflows still require live acceptance):
 
 - EP bibliographic records **in full**: title per language, abstract, applicant / inventor /
   agent names, IPC-inventive symbols, priority, PDF link.
-- The worldwide publication identifier space (~8.17M US publication nodes, plus AT, DE, JP,
-  WO, AU, FR and more).
+- Related non-EP publication identifiers, with more limited content than EP records.
 - The publication ↔ application link, and same-application siblings (the A1/B1 pair).
+- DOCDB simple-family member links through the new `/simple-family` workflow.
 - The backward citation graph.
 
 ### What the keyless tier does NOT serve
@@ -51,8 +49,9 @@ This is the honest delta. LOD is **not** an OPS substitute:
 - **CPC classification lookup.**
 
 Never report an LOD answer as OPS-grade coverage, and never read an empty `/lod/*` result as
-proof a patent does not exist. Empty LOD results run through the fleet empty-result guard:
-a certified negative is annotated `__guard.verified_empty`, and a dead endpoint throws.
+proof a patent does not exist. Legacy LOD routes use a graph-liveness guard, which cannot
+certify worldwide absence. New evidence routes keep an explicit `completeness: "unverified"`
+even for empty or short pages.
 
 ## Credentials (Tier 1)
 
@@ -98,7 +97,7 @@ Locally the server runs at `http://localhost:8852/mcp` (start it with
 
 ## Tools
 
-- `patents_search` — discover available API operations (Code Mode catalog search, 15 endpoints)
+- `patents_search` — discover 19 catalog operations, including three local evidence views
 - `patents_execute` — **Code Mode**: write JavaScript in a V8 isolate (`api.get()` /
   `searchSpec()`) instead of issuing tool calls one by one
 - `patentsview_query_data` — run SQL over large responses auto-staged into a per-session
@@ -108,6 +107,49 @@ Locally the server runs at `http://localhost:8852/mcp` (start it with
 Large responses (>30KB) are auto-staged into a queryable SQLite database; the tools return a
 `data_access_id` you can query with SQL. Every tool returns both a human-readable `content`
 summary and a structured `structuredContent` payload.
+All tools have `mcp_` aliases. Staging also supports `patents_query_data` and
+`patents_get_schema`, matching the names used by Code Mode instructions.
+
+## Family and applicant evidence
+
+```javascript
+const family = await api.get("/lod/publication/EP/1000000/simple-family", {
+  kind: "A1", limit: 50, offset: 0
+});
+return family; // Return the staging handle if __staged is true.
+```
+
+Keep three concepts separate: `/application` finds publications of the same application;
+`/simple-family` follows EPO's DOCDB family links; OPS `/family` returns INPADOC extended
+families. The catalog also exposes the existing authenticated OPS
+`/published-data/publication/{format}/{number}/equivalents/biblio` constituent for simple
+family bibliography. Family membership alone does not establish current legal status.
+
+`/lod/publication/{authority}/{number}/applicants` and `/lod/search/applicant-evidence`
+retain original names, language tags, vCard URIs, address-property evidence and publication
+links. The optional `kind` parameter on publication routes narrows the seed publication.
+Applicant search accepts `name` and `match: "exact" | "contains"`. All three local routes
+accept `limit` (1–200) and `offset` (0–10000) and preserve the full SPARQL response in
+`native`, with exact query/tier metadata. Row limits do not count unique applicants or
+family members. Pages are ordered but not snapshot-pinned; graph updates can shift them.
+
+`comparison_name` applies Unicode NFKC, whitespace folding and lowercase. It preserves
+punctuation and legal-form suffixes and never merges records. EPO vCard hashes identify
+source name/address records, not canonical companies; `legal_entity_verified` stays false.
+OPS native applicant fields, including name data formats, remain intact for inspection.
+
+Provider references: [DOCDB simple families](https://www.epo.org/en/searching-for-patents/helpful-resources/first-time-here/patent-families/docdb),
+[INPADOC extended families](https://www.epo.org/en/searching-for-patents/helpful-resources/first-time-here/patent-families/inpadoc),
+[LOD ontology specification](https://link.epo.org/web/Ontology_Spec_v1.01.pdf), and
+[OPS reference](https://link.epo.org/web/searching-for-patents/data/en-ops-v3.2-documentation-version-1.3.20.pdf).
+Queries use the published HTTP ontology namespace used by the existing server; deployed
+namespace and data coverage still require validation. No new 2026 API release was established.
+
+Validation on 2026-09-29: 34 focused tests, 29 existing offline regression checks,
+TypeScript/lint and the full suite (8,971 tests; 109 skipped) pass. Affected checks passed
+application build/tests, then stopped at GDC Wrangler loopback EPERM. The live MCP probe
+requires unavailable approval, and local Wrangler cannot bind to loopback; provider query
+results, authenticated equivalents and live staging/SQL acceptance remain pending.
 
 ### Keyless examples
 
@@ -138,15 +180,10 @@ One server currently answers to three names, which is a real usability problem f
 |---|---|
 | Fleet alias / worker | `patentsview` |
 | Code Mode tools | `patents_search`, `patents_execute` |
-| Staging tools | `patentsview_query_data`, `patentsview_get_schema` |
+| Staging tools | `patents_query_data`, `patents_get_schema`, plus historical `patentsview_*` aliases |
 
-A model that discovers `patents_execute` cannot guess that the SQL tool is
-`patentsview_query_data`. The tool names are **deliberately left alone here** — renaming
-them breaks every client and every saved prompt that already calls them. The recommended fix
-is a coordinated fleet-wide rename to a single prefix (`patents_*`, since the upstream is
-EPO, not PatentsView), landed together with the registry entries in
-`config/mcp-servers.json` and `cf/server/lib/curated/clinical.ts`. The Durable Object binding
-`PATENTSVIEW_DATA_DO` must stay as it is — renaming it forces a DO migration.
+The aliases support both the Code Mode instructions and existing clients. The Durable
+Object binding remains `PATENTSVIEW_DATA_DO`; no storage migration is needed.
 
 ## Development
 
@@ -165,3 +202,13 @@ known bound title and confirms the US-stub gap.
 
 See [`docs/adding-mcp-servers.md`](../../docs/adding-mcp-servers.md) and the root
 [README](../../README.md) for the full architecture (Code Mode, staging, portals).
+
+<!-- license-and-data-terms:start -->
+## License and data terms
+
+The code in this repository is licensed under the Apache License 2.0 (see `LICENSE`).
+If you use it in your work, please cite it (see `CITATION.cff`). Citation is requested, not required.
+
+The license covers the code only. Data that this server returns comes from EPO OPS + Linked Open EP Data and stays under the terms of that source: OPS fair-use policy; Linked Open Data CC BY 4.0.
+You are responsible for your use of the data under those terms.
+<!-- license-and-data-terms:end -->

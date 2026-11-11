@@ -10,8 +10,8 @@ interface GetSchemaArgs {
 export function registerGetSchema(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }): void {
 	const handler = createGetSchemaHandler("PATENTSVIEW_DATA_DO", "patentsview");
 
-	server.registerTool(
-		"patentsview_get_schema",
+	for (const name of ["patentsview_get_schema", "mcp_patentsview_get_schema", "patents_get_schema", "mcp_patents_get_schema"]) server.registerTool(
+		name,
 		{
 			title: "Get Staged Data Schema",
 			description:

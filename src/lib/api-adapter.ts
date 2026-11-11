@@ -17,6 +17,9 @@ import { guardEmptyResult } from "@bio-mcp/shared/codemode/empty-result-guard";
 import { type EpoOpsEnv, epoOpsFetch } from "./http";
 import { lodSparql, type SparqlResults } from "./lod";
 import { buildLivenessProbeQuery, buildLodQuery, resolveLodRoute } from "./lod-queries";
+import { evidenceQuery } from "./evidence-queries";
+import { evidenceView } from "./evidence-view";
+import { boundedText } from "./bounded-read";
 
 /** Provenance stamp added to every object payload this adapter returns. */
 interface TierMeta {
@@ -111,7 +114,7 @@ async function fetchOps(
 	if (!response.ok) {
 		let errorBody: string;
 		try {
-			errorBody = await response.text();
+			errorBody = await boundedText(response);
 		} catch {
 			errorBody = response.statusText;
 		}
@@ -129,11 +132,11 @@ async function fetchOps(
 	const contentType = response.headers.get("content-type") || "";
 	if (!contentType.includes("json")) {
 		// EPO can return XML/PDF for some constituents (images, certain full-text) — pass as text.
-		const text = await response.text();
+		const text = await boundedText(response);
 		return { status: response.status, data: text };
 	}
 
-	const data: unknown = await response.json();
+	const data: unknown = JSON.parse(await boundedText(response));
 	return { status: response.status, data: annotateTier(data, OPS_META) };
 }
 
@@ -145,6 +148,12 @@ async function fetchOps(
  */
 export function createEpoOpsApiFetch(env: EpoOpsEnv): ApiFetchFn {
 	return async (request) => {
+		if (request.method !== "GET" || request.body !== undefined) throw new Error("EPO catalog routes support GET only");
+		const evidence = evidenceQuery(request.path, request.params ?? {});
+		if (evidence) {
+			const native = await lodSparql(evidence.query);
+			return { status: 200, data: annotateTier(evidenceView(native, evidence), lodMeta(evidence.query)) };
+		}
 		const route = resolveLodRoute(request.path);
 		if (route !== null) {
 			return fetchLod(route, request.params ?? {});

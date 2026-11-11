@@ -12,8 +12,8 @@ interface QueryDataArgs {
 export function registerQueryData(server: McpServer, env?: { PATENTSVIEW_DATA_DO?: unknown }): void {
 	const handler = createQueryDataHandler("PATENTSVIEW_DATA_DO", "patentsview");
 
-	server.registerTool(
-		"patentsview_query_data",
+	for (const name of ["patentsview_query_data", "mcp_patentsview_query_data", "patents_query_data", "mcp_patents_query_data"]) server.registerTool(
+		name,
 		{
 			title: "Query Staged EPO Patent Data",
 			description:

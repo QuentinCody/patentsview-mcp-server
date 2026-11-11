@@ -16,6 +16,7 @@
  * lib/api-adapter.ts routes between the two by path prefix.
  */
 
+import { boundedText } from "./bounded-read.ts";
 const TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken";
 const OPS_BASE = "https://ops.epo.org/3.2/rest-services";
 
@@ -96,8 +97,7 @@ export function assertEpoOpsCredentials(env: Partial<EpoOpsEnv> | undefined): vo
 }
 
 // Module-level token cache
-let cachedToken: string | null = null;
-let tokenExpiresAt = 0;
+const tokens = new WeakMap<EpoOpsEnv, { token: string; expiresAt: number; key: string; secret: string }>();
 
 /**
  * Fetch an OAuth 2.0 access token via client-credentials (HTTP Basic auth).
@@ -108,13 +108,16 @@ async function getAccessToken(env: EpoOpsEnv): Promise<string> {
 	assertEpoOpsCredentials(env);
 
 	const now = Date.now();
-	if (cachedToken && now < tokenExpiresAt) {
-		return cachedToken;
+	const cached = tokens.get(env);
+	if (cached && cached.key === env.EPO_OPS_KEY && cached.secret === env.EPO_OPS_SECRET && now < cached.expiresAt) {
+		return cached.token;
 	}
 
 	const basic = btoa(`${env.EPO_OPS_KEY}:${env.EPO_OPS_SECRET}`);
 	const response = await fetch(TOKEN_URL, {
 		method: "POST",
+		signal: AbortSignal.timeout(25000),
+		redirect: "manual",
 		headers: {
 			Authorization: `Basic ${basic}`,
 			"Content-Type": "application/x-www-form-urlencoded",
@@ -124,22 +127,18 @@ async function getAccessToken(env: EpoOpsEnv): Promise<string> {
 	});
 
 	if (!response.ok) {
-		const errText = await response.text().catch(() => response.statusText);
+		const errText = await boundedText(response).catch(() => response.statusText);
 		throw new Error(
 			`EPO OPS token fetch failed (${response.status}): ${errText.slice(0, 300)}`,
 		);
 	}
 
-	const data = (await response.json()) as { access_token: string; expires_in: string | number };
-	cachedToken = data.access_token;
-	const ttl =
-		typeof data.expires_in === "string"
-			? Number.parseInt(data.expires_in, 10)
-			: data.expires_in;
-	// Expire 60 seconds early; default to 20 min if EPO omits/garbles expires_in.
-	tokenExpiresAt = now + ((Number.isFinite(ttl) && ttl > 0 ? ttl : 1200) - 60) * 1000;
-
-	return cachedToken;
+	const data = JSON.parse(await boundedText(response)) as { access_token?: unknown; expires_in?: unknown };
+	if (typeof data.access_token !== "string" || !data.access_token.trim()) throw new Error("EPO OPS returned no access token");
+	const ttl = Number(data.expires_in);
+	// Expire 60 seconds early; malformed or missing expiry is not cached for reuse.
+	tokens.set(env, { token: data.access_token, expiresAt: now + ((Number.isFinite(ttl) && ttl > 0 ? ttl : 0) - 60) * 1000, key: env.EPO_OPS_KEY, secret: env.EPO_OPS_SECRET });
+	return data.access_token;
 }
 
 /**
@@ -173,15 +172,16 @@ export async function epoOpsFetch(
 		...(init?.headers as Record<string, string> | undefined),
 	};
 
-	const response = await fetch(url.toString(), { ...init, headers });
+	const options = { ...init, signal: init?.signal ?? AbortSignal.timeout(25000), redirect: "manual" as const };
+	const response = await fetch(url.toString(), { ...options, headers });
 
 	// 401 → token invalidated; refresh once and retry.
 	if (response.status === 401) {
-		cachedToken = null;
-		tokenExpiresAt = 0;
+		void response.body?.cancel().catch(() => {}); // Best-effort cleanup before retry.
+		tokens.delete(env);
 		const freshToken = await getAccessToken(env);
 		return fetch(url.toString(), {
-			...init,
+			...options,
 			headers: { ...headers, Authorization: `Bearer ${freshToken}` },
 		});
 	}

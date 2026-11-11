@@ -16,6 +16,7 @@
  * the catalog says so.
  */
 
+import { boundedText } from "./bounded-read.ts";
 const LOD_QUERY_URL = "https://data.epo.org/linked-data/query";
 
 /** Hard per-query budget. Narrow LOD queries answer in <1 s; a full-graph scan can run
@@ -61,6 +62,7 @@ export async function lodSparql(
 	try {
 		response = await fetch(LOD_QUERY_URL, {
 			method: "POST",
+			redirect: "manual",
 			headers: {
 				Accept: "application/sparql-results+json",
 				"Content-Type": "application/x-www-form-urlencoded",
@@ -80,7 +82,7 @@ export async function lodSparql(
 	}
 
 	if (!response.ok) {
-		const body = await response.text().catch(() => response.statusText);
+		const body = await boundedText(response).catch(() => response.statusText);
 		const error = new Error(
 			`EPO Linked Open Data SPARQL returned HTTP ${response.status}: ${body.slice(0, 300)}`,
 		) as Error & { status: number; data: unknown };
@@ -89,7 +91,7 @@ export async function lodSparql(
 		throw error;
 	}
 
-	const parsed: unknown = await response.json();
+	const parsed: unknown = JSON.parse(await boundedText(response));
 	if (!isSparqlResults(parsed)) {
 		const error = new Error(
 			"EPO Linked Open Data SPARQL returned a body that is not SPARQL results JSON — " +

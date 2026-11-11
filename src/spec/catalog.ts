@@ -1,4 +1,5 @@
 import type { ApiCatalog } from "@bio-mcp/shared/codemode/catalog";
+import { evidenceEndpoints, evidenceWorkflows } from "./evidence";
 
 /**
  * EPO patent data, served in TWO TIERS behind one Code Mode surface.
@@ -22,11 +23,11 @@ export const epoOpsCatalog: ApiCatalog = {
 	baseUrl: "https://ops.epo.org/3.2/rest-services",
 	version: "3.2",
 	auth: "oauth2 (OPS paths) / none (/lod/* paths)",
-	endpointCount: 15,
+	endpointCount: 19,
 	notes:
 		"AUTH: OAuth2 client-credentials, handled host-side. Set EPO_OPS_KEY + EPO_OPS_SECRET (register a free app at https://developers.epo.org/user/register, then `npx wrangler secret put EPO_OPS_KEY` / `EPO_OPS_SECRET`). The isolate never sees credentials. When either secret is unset, every OPS path fails FAST with a MISSING_CREDENTIALS error naming both variables — it never returns an empty or fabricated result.\n" +
-		"KEYLESS TIER (`/lod/*`): EPO Linked Open Data (https://data.epo.org/linked-data/query, SPARQL, CC BY 4.0) needs NO credential and works today. Use it when the OPS secrets are absent, or for cheap identifier/citation resolution.\n" +
-		"  IT SERVES: EP bibliographic records in full (title per language, abstract, applicant/inventor/agent names, IPC-inventive symbols, priority, PDF link); the worldwide publication identifier space (~8.17M US publication nodes, plus AT/DE/JP/WO/AU/FR and more); the publication↔application link; the backward citation graph.\n" +
+		"KEYLESS TIER (`/lod/*`): EPO Linked Open Data (https://data.epo.org/linked-data/query, SPARQL, CC BY 4.0) needs no credential. Coverage differs from OPS.\n" +
+		"  IT SERVES: EP bibliographic records, related non-EP publication identifiers, application links, DOCDB simple-family links and a citation graph. Local evidence workflows preserve source RDF and record applicant comparison hints without canonical company merging.\n" +
 		"  IT DOES NOT SERVE, and OPS does: (a) non-EP bibliographic CONTENT — a US/JP publication node carries only number/date/kind/authority/application, with NO title and NO abstract; (b) full text (claims/description) at all; (c) INPADOC legal-status events; (d) the INPADOC family endpoint (`/lod/publication/.../application` gives same-application siblings, which is narrower); (e) CQL free-text search; (f) CPC classification lookup.\n" +
 		"  NEVER report an LOD answer as OPS-grade coverage, and never read an empty `/lod/*` result as proof a patent does not exist — check `_meta.coverage_caveat` and `__guard` on the response.\n" +
 		"TIER PROVENANCE: every JSON object this server returns carries `_meta.tier` = `epo-ops` or `epo-lod`, plus the upstream URL, the license and (for LOD) the exact SPARQL that produced the rows. Report the tier alongside any claim.\n" +
@@ -37,11 +38,12 @@ export const epoOpsCatalog: ApiCatalog = {
 		"  • docdb: dotted country.number.kind, e.g. `US.20070178709.A1`, `EP.1000000.A1`\n" +
 		"CQL SEARCH (/published-data/search, `q` param): fields ti=title, ab=abstract, ta=title+abstract, txt=title+abstract+inventor+applicant, in=inventor, pa=applicant, pn=publication-number, ap=application-number, pr=priority, num=any number, ipc=IPC class, cpc=CPC class, pd=publication-date.\n" +
 		"  Operators: and / or / not; phrase in quotes; date range via `within`, e.g. q=`ti=graphene and pd within \"20200101 20231231\"`.\n" +
-		"PAGINATION: the search endpoint returns the first 25 hits and a @total-result-count. Larger ranges use the OPS `Range` HTTP header (max 100/page) — not all clients can set it, so paginate by narrowing the CQL query (e.g. by date window or class).\n" +
+		"PAGINATION: published-data search supports the Range query parameter (1-25 by default, at most 100/page, maximum retrievable result window 2000); EPO documents X-OPS-Range as its HTTP header equivalent. Inspect native counts/ranges; a bounded response does not prove complete coverage.\n" +
 		"QUOTA / FAIR USE: free tier ≈ 4 GB traffic/week. Over-quota or burst traffic returns HTTP 403 `<error><code>403</code><message>… Fair Use …</message></error>` — back off and retry. Fine for interactive agent use; NOT for bulk corpus download.\n" +
 		"COVERAGE: bibliographic + family + legal is worldwide (DOCDB/INPADOC, 100+ authorities). Full-text (claims/description) is mainly EP and WO; US/other full-text is thinner. For US assignment + PTAB validity data, pair with a USPTO source.\n" +
 		"WORKFLOW: search (CQL) → collect publication numbers → fetch /biblio, /abstract, /claims per number → /family for INPADOC siblings → /legal for status events.",
 	endpoints: [
+		...evidenceEndpoints,
 		{
 			method: "GET",
 			path: "/published-data/search",
@@ -50,7 +52,7 @@ export const epoOpsCatalog: ApiCatalog = {
 			category: "search",
 			queryParams: [
 				{ name: "q", type: "string", required: true, description: "CQL query, e.g. `ti=apixaban`, `pa=\"bristol-myers squibb\"`, `txt=car-t and pd within \"20200101 20231231\"`" },
-				{ name: "Range", type: "string", required: false, description: "Result range, e.g. `1-25` (max 100). Often must be sent as an HTTP header; narrow the query instead if unavailable." },
+				{ name: "Range", type: "string", required: false, description: "Supported range query parameter, e.g. `1-25`; max 100/page and at most 2000 retrievable results." },
 			],
 		},
 		{
@@ -109,7 +111,7 @@ export const epoOpsCatalog: ApiCatalog = {
 			method: "GET",
 			path: "/family/publication/docdb/{number}/biblio",
 			summary:
-				"INPADOC patent family for a publication: all family members worldwide with their bibliographic data — the basis for global freedom-to-operate / coverage mapping.",
+				"INPADOC extended-family members with bibliographic data. Distinct from DOCDB simple-family equivalents; family membership alone does not establish legal status or freedom to operate.",
 			category: "family",
 			queryParams: [
 				{ name: "number", type: "string", required: true, description: "docdb-format number, e.g. `US.20070178709.A1` (path param)" },
@@ -220,4 +222,5 @@ export const epoOpsCatalog: ApiCatalog = {
 			],
 		},
 	],
+	workflows: evidenceWorkflows,
 };
